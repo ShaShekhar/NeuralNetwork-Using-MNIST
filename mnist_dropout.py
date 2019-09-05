@@ -7,46 +7,55 @@ import matplotlib.pyplot as plt
 np.random.seed(1234)
 random.seed(1234)
 
+# Load the data into memory from pickle file
 def load_data():
-    with gzip.open('mnist.pkl.gz','rb') as f:
-        training_data,validation_data,test_data = pickle.load(f,encoding='latin1')
+    with gzip.open('mnist.pkl.gz', 'rb') as f:
+        training_data, validation_data, test_data = pickle.load(f, encoding='latin1')
     return training_data, validation_data, test_data
 
+# Make the data ready for training neural network
 def load_data_wrapper():
-    tr_d,va_d,te_d = load_data()
-    training_inputs = [np.reshape(x,(1,784)) for x in tr_d[0]]
+    tr_d, va_d, te_d = load_data()
+    training_inputs = [np.reshape(x, (1, 784)) for x in tr_d[0]]
     training_labels = [vectorize(x) for x in tr_d[1]]
-    training_data = zip(training_inputs,training_labels)
-    validation_inputs = [np.reshape(x,(1,784)) for x in va_d[0]]
-    validation_data = zip(validation_inputs,va_d[1])
-    test_inputs = [np.reshape(x,(1,784)) for x in te_d[0]]
-    test_data = zip(test_inputs,te_d[1])
+    training_data = zip(training_inputs, training_labels)
+
+    validation_inputs = [np.reshape(x, (1, 784)) for x in va_d[0]]
+    validation_data = zip(validation_inputs, va_d[1])
+
+    test_inputs = [np.reshape(x, (1, 784)) for x in te_d[0]]
+    test_data = zip(test_inputs, te_d[1])
+
     return training_data, validation_data, test_data
 
+# encode the label into one-hot encoding format
 def vectorize(j):
-    z = np.zeros((1,10))
-    z[0,j] = 1.0
+    z = np.zeros((1, 10))
+    z[0, j] = 1.0
     return z
-training_data,validation_data,test_data = load_data_wrapper()
+
+training_data, validation_data, test_data = load_data_wrapper()
 
 class NetWork(object):
-    def __init__(self,sizes):
-        self.num_layers = len(sizes)
-        self.sizes = sizes
-        self.biases = [np.random.randn(1,b) for b in self.sizes[1:]]
-        self.weights = [np.random.randn(x,y) for x,y in zip(self.sizes[:-1],self.sizes[1:])]
+    def __init__(self, layers):
+        self.num_layers = len(layers)
+        self.layers = layers
+        self.biases = [np.random.randn(1, b) for b in self.layers[1:]]
+        self.weights = [np.random.randn(x, y) for x,y in zip(self.layers[:-1], self.layers[1:])]
 
-    def feedforward(self,a):
-        for b,w in zip(self.biases,self.weights):
-            a = sigmoid(np.dot(a,w)+b)
+    def feedforward(self, a):
+        for b, w in zip(self.biases, self.weights):
+            a = sigmoid(np.dot(a, w) + b)
         return a
 
-    def SGD(self,training_data,epochs,mini_batch_size,lr,lmbda,test_data=None):
+    def SGD(self, training_data, epochs, mini_batch_size, lr, lmbda, test_data=None):
         training_data = list(training_data)
         n = len(training_data)
+
         if test_data:
             test_data = list(test_data)
             n_test = len(test_data)
+
         for j in range(epochs):
             random.shuffle(training_data)
             mini_batches = [training_data[k:k+mini_batch_size] for k in range(0,n,mini_batch_size)]
@@ -58,6 +67,9 @@ class NetWork(object):
             else:
                 print('Epochs:{} Completed!'.format(j))
 
+        if (self.num_layers == 2):
+            self.visualize_weight()
+
     def update_mini_batch(self, mini_batch, lr, mini_batch_size, lmbda, n):
         # Extract the x_data and y_label
         mini_batch_x_data = np.squeeze(np.array([mini_batch[i][0] for i in range(len(mini_batch))]))
@@ -68,11 +80,13 @@ class NetWork(object):
         zs = []
         keep_prob = 0.8
         counter = 0
-        for b,w in zip(self.biases,self.weights):
+
+        for b, w in zip(self.biases, self.weights):
             counter += 1
-            if counter == self.num_layers-1:
+            if (counter == self.num_layers-1):
                 keep_prob = 1.0
-            z = np.dot(activation,w)+b
+
+            z = np.dot(activation, w) + b
             zs.append(z)
             activation = sigmoid(z)
             drop = (np.random.rand(*b.shape) < keep_prob)/keep_prob
@@ -80,19 +94,21 @@ class NetWork(object):
             activations.append(activation)
 
         # backward pass on that mini_batch
-        delta = (activations[-1]-mini_batch_label)*((1-activations[-1])*activations[-1]) #sigmoid_prime(zs[-1])*dropout[-1]
-        grad_b = np.sum(delta,axis=0,keepdims=True)*(1.0/float(len(mini_batch)))
-        self.biases[-1] -= lr*grad_b
-        grad_w = np.dot(activations[-2].T,delta)*(1.0/float(len(mini_batch)))
+        delta = (activations[-1] - mini_batch_label)*((1-activations[-1]) * activations[-1]) #sigmoid_prime(zs[-1])*dropout[-1]
+        grad_b = np.sum(delta, axis=0, keepdims=True)
+        self.biases[-1] -= lr*grad_b*(1.0/float(len(mini_batch)))
+
+        grad_w = np.dot(activations[-2].T, delta)
         #self.weights[-1] -= lr*grad_w[-1]
-        self.weights[-1] = (1-lr*(lmbda/n))*self.weights[-1] - lr*grad_w
-        for l in range(2,self.num_layers):
-            delta = np.dot(delta,self.weights[-l+1].T)*((1-activations[-l])*activations[-l]) #sigmoid_prime(zs[-l])*dropout[-l]
-            grad_b = np.sum(delta,axis=0,keepdims=True)*(1.0/float(len(mini_batch)))
-            self.biases[-l] -= lr*grad_b
-            grad_w = np.dot(activations[-l-1].T,delta)*(1.0/float(len(mini_batch)))
+        self.weights[-1] = (1-lr*(lmbda/n))*self.weights[-1] - lr*grad_w*(1.0/float(len(mini_batch)))
+
+        for l in range(2, self.num_layers):
+            delta = np.dot(delta, self.weights[-l+1].T)*((1-activations[-l])*activations[-l]) #sigmoid_prime(zs[-l])*dropout[-l]
+            grad_b = np.sum(delta, axis=0, keepdims=True)
+            self.biases[-l] -= lr*grad_b*(1.0/float(len(mini_batch)))
+            grad_w = np.dot(activations[-l-1].T, delta)
             #self.weights[-l] -= lr*grad_w
-            self.weights[-l] = (1-lr*(lmbda/n))*self.weights[-l] - lr*grad_w
+            self.weights[-l] = (1-lr*(lmbda/n))*self.weights[-l] - lr*grad_w*(1.0/float(len(mini_batch)))
 
     def evaluate(self,test_data):
         c = 0
@@ -111,13 +127,13 @@ class NetWork(object):
         plt.show()
 
 def sigmoid(z):
-    return 1.0/(1.0+np.exp(-z))
+    return 1.0/(1.0 + np.exp(-z))
+
 def sigmoid_prime(z):
-    return sigmoid(z)*(1-sigmoid(z))
+    return sigmoid(z)*(1 - sigmoid(z))
 
 net = NetWork([784,30,10])
-net.SGD(training_data,100,64,3.0,2.0,test_data=test_data)
-#net.visualize_weight()
+net.SGD(training_data, 100, 64, 3.0, 2.0, test_data=test_data)
 """
 First Time when i implement dropout under 10 Epochs the accuracy is not increase much so i always cancle the training
 and i think its not working, and after taining the network for 100 epochs the test accuracy becomes better and better.
